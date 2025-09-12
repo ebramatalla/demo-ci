@@ -9,7 +9,7 @@ on:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-    defaults: { run: { shell: cmd } }  # استخدام cmd للويندوز
+    defaults: { run: { shell: cmd } }
     steps:
       - uses: actions/checkout@v4
       
@@ -36,43 +36,46 @@ jobs:
           npx --yes pm2 start ecosystem.config.js --env development
           npx --yes pm2 save
           
-          # إنشاء سكريبت بدء تلقائي للويندوز
-          npx --yes pm2 startup windows | findstr /C:"pm2" > startup.bat || echo "Startup command not found"
+          # إعداد بدء تلقائي للويندوز
+          npx --yes pm2 startup windows -n | findstr /C:"pm2" > startup.bat || echo "Startup command not found"
           if exist startup.bat (
             call startup.bat
             del startup.bat
           )
 
+      - name: Wait for app to start
+        run: |
+          echo Waiting for application to start...
+          ping -n 10 127.0.0.1 >nul
+
       - name: PM2 debug (dev)
-        if: always()
         run: |
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
+          echo ===== PM2 List =====
           npx --yes pm2 list
+          echo ===== PM2 Describe =====
           npx --yes pm2 describe demo-ci || echo "Cannot describe app"
-          echo ===== logs =====
-          dir "%PM2_HOME%\logs" || echo "Logs directory not found"
-          if exist "%PM2_HOME%\logs\demo-ci-error.log" (
-            type "%PM2_HOME%\logs\demo-ci-error.log"
-          ) else (
-            echo (no error log)
-          )
-          if exist "%PM2_HOME%\logs\demo-ci-out.log" (
-            type "%PM2_HOME%\logs\demo-ci-out.log"
-          ) else (
-            echo (no out log)
-          )
+          echo ===== PM2 Logs =====
+          npx --yes pm2 logs demo-ci --lines 10 || echo "Cannot show logs"
+
+      - name: Check listening ports
+        run: |
+          echo ===== Netstat Output =====
+          netstat -an | findstr ":3000" || echo "Port 3000 not found in listening state"
+          echo ===== Process List =====
+          tasklist | findstr "node" || echo "No node processes found"
 
       - name: Health check (dev)
         run: |
-          timeout /t 5 /nobreak >nul
-          curl -sSf http://localhost:3000/hello || echo "Health check failed for /hello"
-          curl -sSf http://localhost:3000/bye || echo "Health check failed for /bye"
+          echo ===== Health Check =====
+          curl -sSf http://localhost:3000/hello && echo "Health check passed for /hello" || echo "Health check failed for /hello"
+          curl -sSf http://localhost:3000/bye && echo "Health check passed for /bye" || echo "Health check failed for /bye"
 
   deploy_prod:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, lab, prod]
     environment: { name: production }
-    defaults: { run: { shell: cmd } }  # توحيد استخدام cmd
+    defaults: { run: { shell: cmd } }
     steps:
       - uses: actions/checkout@v4
       
@@ -99,34 +102,29 @@ jobs:
           npx --yes pm2 start ecosystem.config.js --env production
           npx --yes pm2 save
           
-          # إنشاء سكريبت بدء تلقائي للويندوز
-          npx --yes pm2 startup windows | findstr /C:"pm2" > startup.bat || echo "Startup command not found"
+          npx --yes pm2 startup windows -n | findstr /C:"pm2" > startup.bat || echo "Startup command not found"
           if exist startup.bat (
             call startup.bat
             del startup.bat
           )
 
+      - name: Wait for app to start
+        run: |
+          echo Waiting for application to start...
+          ping -n 10 127.0.0.1 >nul
+
       - name: PM2 debug (prod)
-        if: always()
         run: |
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
+          echo ===== PM2 List =====
           npx --yes pm2 list
+          echo ===== PM2 Describe =====
           npx --yes pm2 describe demo-ci || echo "Cannot describe app"
-          echo ===== logs =====
-          dir "%PM2_HOME%\logs" || echo "Logs directory not found"
-          if exist "%PM2_HOME%\logs\demo-ci-error.log" (
-            type "%PM2_HOME%\logs\demo-ci-error.log"
-          ) else (
-            echo (no error log)
-          )
-          if exist "%PM2_HOME%\logs\demo-ci-out.log" (
-            type "%PM2_HOME%\logs\demo-ci-out.log"
-          ) else (
-            echo (no out log)
-          )
+          echo ===== PM2 Logs =====
+          npx --yes pm2 logs demo-ci --lines 10 || echo "Cannot show logs"
 
       - name: Health check (prod)
         run: |
-          timeout /t 5 /nobreak >nul
-          curl -sSf http://localhost:3000/hello || echo "Health check failed for /hello"
-          curl -sSf http://localhost:3000/bye || echo "Health check failed for /bye"
+          echo ===== Health Check =====
+          curl -sSf http://localhost:3000/hello && echo "Health check passed for /hello" || echo "Health check failed for /hello"
+          curl -sSf http://localhost:3000/bye && echo "Health check passed for /bye" || echo "Health check failed for /bye"
