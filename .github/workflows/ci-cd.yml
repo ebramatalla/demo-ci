@@ -27,44 +27,59 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Prepare PM2 home
+      - name: Prepare PM2 dir
         run: if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm ci --omit=dev
 
-      # شغّل/أعد تشغيل السيرفر مباشرة من index.js (من غير ecosystem مؤقتًا)
-      - name: PM2 start/restart (dev)
+      - name: PM2 clean start
         run: |
           cd /d "%GITHUB_WORKSPACE%"
           echo CWD=%CD%
           echo PM2_HOME=%PM2_HOME%
           node -v
-          call node -e "require('express'); console.log('express OK')"
-          call node -e "require('fs').accessSync('./index.js'); console.log('index file OK')"
-          npx --yes pm2 -v
-          npx --yes pm2 restart demo-ci || npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci --time
-          npx --yes pm2 save
+          rem ابدأ من وضع نظيف
+          npx --yes pm2 kill || ver >NUL
+          npx --yes pm2 delete demo-ci || ver >NUL
+          rem شغّل index.js مباشرة وسمّه demo-ci وحط لوجات معروفة
+          npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci --time ^
+            -o "%PM2_HOME%\logs\demo-ci-out.log" -e "%PM2_HOME%\logs\demo-ci-error.log" --merge-logs --update-env
+          echo ---- pm2 ping ----
+          npx --yes pm2 ping
+          echo ---- pm2 list ----
           npx --yes pm2 list
+          echo ---- pm2 describe ----
           npx --yes pm2 describe demo-ci
+          npx --yes pm2 save
+          echo ---- tail last logs ----
+          type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log yet)
+          type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log yet)
+          echo ---- pm2 report (short) ----
+          npx --yes pm2 report > "%PM2_HOME%\pm2-report.txt"
+          for /f "usebackq delims=" %%L in ("%PM2_HOME%\pm2-report.txt") do @echo %%L | findstr /c:"PM2" /c:"Error" /c:"script" /c:"node" >NUL && echo %%L
 
-      # الهيلث تشيك بـ PowerShell (من غير goto)
-      - name: Health check (dev)
-        shell: powershell
+      - name: Health check (CMD only)
         run: |
-          $urls = @("http://localhost:3000/hello","http://localhost:3000/bye")
-          foreach ($u in $urls) {
-            $ok = $false
-            foreach ($i in 1..15) {
-              try {
-                Invoke-WebRequest $u -UseBasicParsing -TimeoutSec 3 | Out-Null
-                $ok = $true; break
-              } catch { Start-Sleep -Seconds 2 }
-            }
-            if (-not $ok) { throw "Health check failed: $u" }
-          }
+          set OK=1
+          for /L %%i in (1,1,20) do (
+            echo [%%i/20] GET /hello
+            curl -s http://localhost:3000/hello >NUL && set OK=0 && goto H1
+            timeout /t 2 /nobreak >NUL
+          )
+          :H1
+          if %OK% NEQ 0 exit /b 1
 
-      - name: PM2 debug (only if failed)
+          set OK=1
+          for /L %%i in (1,1,20) do (
+            echo [%%i/20] GET /bye
+            curl -s http://localhost:3000/bye >NUL && set OK=0 && goto H2
+            timeout /t 2 /nobreak >NUL
+          )
+          :H2
+          if %OK% NEQ 0 exit /b 1
+
+      - name: PM2 debug on fail
         if: failure()
         run: |
           npx --yes pm2 list
