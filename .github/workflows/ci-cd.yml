@@ -26,6 +26,13 @@ jobs:
       - name: Install deps
         run: npm ci --omit=dev
 
+      - name: Setup PM2 environment
+              run: |
+                setx HOMEPATH "%USERPROFILE%"
+                setx HOMEDRIVE "%SystemDrive%"
+                setx PM2_HOME "%USERPROFILE%\.pm2"
+                mkdir "%USERPROFILE%\.pm2" 2>nul || echo "PM2 directory already exists"
+                
       - name: PM2 clean start
         run: |
           echo "Starting PM2 with ecosystem.config.js..."
