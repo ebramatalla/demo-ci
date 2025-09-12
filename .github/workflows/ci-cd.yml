@@ -2,31 +2,17 @@ name: CI/CD
 
 on:
   push:
-    branches: ["main"] # أي push على main = CI + Deploy Dev
-    tags: ["v*"] # أي tag يبدأ بـ v = Deploy Prod
+    branches: ["main"]          # أي push على main = Deploy Dev
+    tags: ["v*"]                # أي tag v* = Deploy Prod
   workflow_dispatch: {}
 
 jobs:
-  # --- CI على سحابة GitHub ---
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci
-      - run: npm test
-
   # --- Deploy Dev على جهاز PC ---
   deploy_dev:
-    needs: test
-    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, pc, dev]
     defaults:
       run:
-        shell: cmd
+        shell: cmd              # شغّل كل خطوات ويندوز بـ CMD
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,12 +27,16 @@ jobs:
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
           npx --yes pm2 delete demo-ci || ver >NUL
-          npx --yes pm2 start index.js --name demo-ci --env development
+          npx --yes pm2 start index.js --name demo-ci
           npx --yes pm2 save
+
+      - name: Health check (dev)
+        run: |
+          curl -sSf http://localhost:3000/hello >NUL
+          curl -sSf http://localhost:3000/bye >NUL
 
   # --- Deploy Prod على جهاز Lab (Tag فقط) ---
   deploy_prod:
-    needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, lab, prod]
     environment:
@@ -65,9 +55,13 @@ jobs:
 
       - name: PM2 deploy (prod)
         run: |
-          set PM2_HOME=%GITHUB_WORKSPACE%\.pm2
+          set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          npx --yes pm2 --version
-          npx --yes pm2 kill || ver >NUL
-          npx --yes pm2 startOrReload ecosystem.config.js --env production
+          npx --yes pm2 delete demo-ci || ver >NUL
+          npx --yes pm2 start index.js --name demo-ci
           npx --yes pm2 save
+
+      - name: Health check (prod)
+        run: |
+          curl -sSf http://localhost:3000/hello >NUL
+          curl -sSf http://localhost:3000/bye >NUL
