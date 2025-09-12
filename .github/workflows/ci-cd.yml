@@ -26,7 +26,7 @@ jobs:
           cd /d "%GITHUB_WORKSPACE%"
           rem ابدأ من الصفر دايمًا (لو مش موجود مش مشكلة)
           npx --yes pm2 delete ecosystem.config.js
-          npx --yes pm2 ecosystem.config.js --env development
+          npx --yes pm2 start ecosystem.config.js --env development
           npx --yes pm2 save
 
       - name: PM2 debug (dev)
