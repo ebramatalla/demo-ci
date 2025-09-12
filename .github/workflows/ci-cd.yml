@@ -12,6 +12,12 @@ defaults:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
+    # ثبّت بيئة PM2 لكل خطوات الجوب (ينهي مشكلة /etc/.pm2)
+    env:
+      PM2_HOME: C:\pm2\dev
+      HOME: C:\pm2\dev
+      PM2_RPC_PORT: \\.\pipe\pm2-${{ github.run_id }}-rpc
+      PM2_PUB_PORT: \\.\pipe\pm2-${{ github.run_id }}-pub
 
     steps:
       - uses: actions/checkout@v4
@@ -23,20 +29,64 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
+      - name: Prepare PM2 directory
+        run: |
+          if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
+          echo CWD=%CD%  &&  dir
+
       - name: Install deps
         run: npm ci --omit=dev
 
-      - name: Setup PM2 environment
-              run: |
-                setx HOMEPATH "%USERPROFILE%"
-                setx HOMEDRIVE "%SystemDrive%"
-                setx PM2_HOME "%USERPROFILE%\.pm2"
-                mkdir "%USERPROFILE%\.pm2" 2>nul || echo "PM2 directory already exists"
-                
-      - name: PM2 clean start
+      - name: PM2 clean start (index.js)
         run: |
-          echo "Starting PM2 with ecosystem.config.js..."
-          echo "Current directory: %CD%"
-          pm2 ls
-          ls -la
           echo CWD=%CD%
+          echo PM2_HOME=%PM2_HOME%
+          npx --yes pm2 -v
+          rem ابدأ من الصفر
+          npx --yes pm2 kill || ver >NUL
+          npx --yes pm2 delete demo-ci || ver >NUL
+          rem شغّل وابني لوجات واضحة داخل PM2_HOME
+          npx --yes pm2 start "%CD%\index.js" --name demo-ci --time ^
+            -o "%PM2_HOME%\logs\demo-ci-out.log" ^
+            -e "%PM2_HOME%\logs\demo-ci-error.log" ^
+            --merge-logs --update-env
+          rem تحقق فوري
+          npx --yes pm2 ping
+          npx --yes pm2 list
+          npx --yes pm2 describe demo-ci
+          npx --yes pm2 save
+          echo ----- last logs -----
+          type "%PM2_HOME%\logs\demo-ci-error.log" 2>NUL || echo (no error log)
+          type "%PM2_HOME%\logs\demo-ci-out.log"  2>NUL || echo (no out log)
+
+      - name: Health check (CMD)
+        run: |
+          set OK=1
+          for /L %%i in (1,1,20) do (
+            echo [%%i/20] GET /hello
+            curl -s http://localhost:3000/hello >NUL && set OK=0 && goto H1
+            timeout /t 2 /nobreak >NUL
+          )
+          :H1
+          if %OK% NEQ 0 exit /b 1
+
+          set OK=1
+          for /L %%i in (1,1,20) do (
+            echo [%%i/20] GET /bye
+            curl -s http://localhost:3000/bye >NUL && set OK=0 && goto H2
+            timeout /t 2 /nobreak >NUL
+          )
+          :H2
+          if %OK% NEQ 0 exit /b 1
+
+      - name: PM2 debug (on fail)
+        if: failure()
+        run: |
+          npx --yes pm2 list
+          npx --yes pm2 describe demo-ci || echo (no describe)
+          echo ===== logs dir =====
+          dir "%PM2_HOME%\logs"
+          echo ===== error log =====
+          type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
+          echo ===== out log =====
+          type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
