@@ -6,27 +6,47 @@ on:
     tags: ["v*"]
   workflow_dispatch: {}
 
+# إجبار كل أوامر run على CMD في ويندوز
+defaults:
+  run:
+    shell: cmd
+
 jobs:
+  # -------- Deploy Dev على جهاز PC --------
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-    defaults: { run: { shell: cmd } }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
 
-      - run: npm ci --omit=dev
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
 
       - name: PM2 deploy (dev)
         run: |
-          rem استخدم فولدر محلي لـ PM2
+          rem ==== تثبيت بيئة PM2 داخل workspace + pipes فريدة ====
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          rem تأكد إننا جوه الريبو
+          set "PM2_RPC_PORT=\\.\pipe\pm2-%GITHUB_RUN_ID%-rpc"
+          set "PM2_PUB_PORT=\\.\pipe\pm2-%GITHUB_RUN_ID%-pub"
+
+          rem ==== تأكد إننا جوه الريبو + sanity checks ====
           cd /d "%GITHUB_WORKSPACE%"
-          rem ابدأ من الصفر دايمًا (لو مش موجود مش مشكلة)
-          npx --yes pm2 delete ecosystem.config.js
-          npx --yes pm2 start ecosystem.config.js --env development
+          echo CWD=%CD%
+          node -v
+          call node -e "require('express'); console.log('express OK')"
+          call node -e "require('./index'); console.log('index require OK')"
+
+          rem ==== ابدأ/أعد التشغيل بالاسم الصحيح ====
+          npx --yes pm2 -v
+          npx --yes pm2 restart demo-ci || npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci --time
+          npx --yes pm2 ping
           npx --yes pm2 save
 
       - name: PM2 debug (dev)
@@ -34,36 +54,74 @@ jobs:
         run: |
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           npx --yes pm2 list
-          npx --yes pm2 describe demo-ci
-          echo ===== logs =====
+          npx --yes pm2 describe demo-ci || echo (no describe)
+          echo ===== logs dir =====
           dir "%PM2_HOME%\logs"
+          echo ===== error log =====
           type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
+          echo ===== out log =====
           type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
 
-      - name: Health check (dev)
+      - name: Health check (dev) with retry
         run: |
-          curl -sSf http://localhost:3000/hello >NUL
-          curl -sSf http://localhost:3000/bye >NUL
+          setlocal enabledelayedexpansion
+          set OK=0
+          for /l %%i in (1,1,10) do (
+            echo [Try %%i/10] Checking /hello ...
+            curl -sSf http://localhost:3000/hello >NUL && set OK=1 && goto :HELLO_OK
+            timeout /t 2 /nobreak >NUL
+          )
+          :HELLO_OK
+          if not "!OK!"=="1" exit /b 1
 
+          set OK=0
+          for /l %%i in (1,1,10) do (
+            echo [Try %%i/10] Checking /bye ...
+            curl -sSf http://localhost:3000/bye >NUL && set OK=1 && goto :BYE_OK
+            timeout /t 2 /nobreak >NUL
+          )
+          :BYE_OK
+          if not "!OK!"=="1" exit /b 1
+          endlocal
+
+  # -------- Deploy Prod على جهاز Lab (Tag فقط) --------
   deploy_prod:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, lab, prod]
-    environment: { name: production }
-    defaults: { run: { shell: cmd } }
+    environment:
+      name: production
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
 
-      - run: npm ci --omit=dev
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
 
       - name: PM2 deploy (prod)
         run: |
+          rem ==== تثبيت بيئة PM2 داخل workspace + pipes فريدة ====
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
+          set "PM2_RPC_PORT=\\.\pipe\pm2-%GITHUB_RUN_ID%-rpc"
+          set "PM2_PUB_PORT=\\.\pipe\pm2-%GITHUB_RUN_ID%-pub"
+
+          rem ==== تأكد إننا جوه الريبو + sanity checks ====
           cd /d "%GITHUB_WORKSPACE%"
-          npx --yes pm2 delete demo-ci || ver >NUL
-          npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci
+          echo CWD=%CD%
+          node -v
+          call node -e "require('express'); console.log('express OK')"
+          call node -e "require('./index'); console.log('index require OK')"
+
+          rem ==== ابدأ/أعد التشغيل بالاسم الصحيح ====
+          npx --yes pm2 -v
+          npx --yes pm2 restart demo-ci || npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci --time
+          npx --yes pm2 ping
           npx --yes pm2 save
 
       - name: PM2 debug (prod)
@@ -71,12 +129,32 @@ jobs:
         run: |
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           npx --yes pm2 list
-          npx --yes pm2 describe demo-ci
+          npx --yes pm2 describe demo-ci || echo (no describe)
+          echo ===== logs dir =====
           dir "%PM2_HOME%\logs"
+          echo ===== error log =====
           type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
+          echo ===== out log =====
           type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
 
-      - name: Health check (prod)
+      - name: Health check (prod) with retry
         run: |
-          curl -sSf http://localhost:3000/hello >NUL
-          curl -sSf http://localhost:3000/bye >NUL
+          setlocal enabledelayedexpansion
+          set OK=0
+          for /l %%i in (1,1,10) do (
+            echo [Try %%i/10] Checking /hello ...
+            curl -sSf http://localhost:3000/hello >NUL && set OK=1 && goto :HELLO_OK
+            timeout /t 2 /nobreak >NUL
+          )
+          :HELLO_OK
+          if not "!OK!"=="1" exit /b 1
+
+          set OK=0
+          for /l %%i in (1,1,10) do (
+            echo [Try %%i/10] Checking /bye ...
+            curl -sSf http://localhost:3000/bye >NUL && set OK=1 && goto :BYE_OK
+            timeout /t 2 /nobreak >NUL
+          )
+          :BYE_OK
+          if not "!OK!"=="1" exit /b 1
+          endlocal
