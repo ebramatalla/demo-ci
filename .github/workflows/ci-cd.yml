@@ -31,3 +31,4 @@ jobs:
           echo "Starting PM2 with ecosystem.config.js..."
           echo "Current directory: %CD%"
           echo CWD=%CD%
+          pm2 ls
