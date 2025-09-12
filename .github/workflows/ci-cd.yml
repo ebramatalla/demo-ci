@@ -1,10 +1,11 @@
-name: CI/CD
+name: CI/CD (Dev only)
 
 on:
   push:
     branches: ["main"]
   workflow_dispatch: {}
 
+# نشغّل كل أوامر run بــ CMD عشان نتجنب مشاكل PowerShell ExecutionPolicy
 defaults:
   run:
     shell: cmd
@@ -12,9 +13,13 @@ defaults:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
+
+    # متغيرات بيئة ثابتة لـ PM2 علشان ما يعتمدش على حساب الخدمة
     env:
-      PM2_HOME: C:\pm2\dev
+      # نخلي HOME و PM2_HOME في مسار واضح
       HOME: C:\pm2\dev
+      PM2_HOME: C:\pm2\dev
+      # نعمل named pipes فريدة لكل Job علشان نتجنب EPERM على rpc.sock
       PM2_RPC_PORT: \\.\pipe\pm2-${{ github.run_id }}-rpc
       PM2_PUB_PORT: \\.\pipe\pm2-${{ github.run_id }}-pub
 
@@ -28,54 +33,80 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Prepare PM2 dir
-        run: if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
+      - name: Prepare PM2 home
+        run: |
+          if not exist "C:\pm2" mkdir "C:\pm2"
+          if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
 
-      - name: Install deps
+      - name: Install dependencies
         run: npm ci --omit=dev
 
-      - name: PM2 clean start
+      - name: Start / Restart with PM2
         run: |
           cd /d "%GITHUB_WORKSPACE%"
           echo CWD=%CD%
+          echo HOME=%HOME%
+          echo PM2_HOME=%PM2_HOME%
+          echo PM2_RPC_PORT=%PM2_RPC_PORT%
+          echo PM2_PUB_PORT=%PM2_PUB_PORT%
+
+          rem تأكد إن index.js موجود
+          if not exist "%CD%\index.js" (
+            echo [ERROR] index.js not found
+            exit /b 1
+          )
+
+          rem شغّل pm2 عبر npx (مش محتاج pm2 global)
           npx --yes pm2 -v
+          rem اقفل أي دايمن قديم إن وُجد وتجاهل الأخطاء
           npx --yes pm2 kill || ver >NUL
           npx --yes pm2 delete demo-ci || ver >NUL
+
+          rem ابدأ التطبيق على اسم demo-ci مع لوجات واضحة
           npx --yes pm2 start "%CD%\index.js" --name demo-ci --time ^
             -o "%PM2_HOME%\logs\demo-ci-out.log" ^
             -e "%PM2_HOME%\logs\demo-ci-error.log" ^
             --merge-logs --update-env
+
+          rem التحقق السريع
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci
           npx --yes pm2 save
-          type "%PM2_HOME%\logs\demo-ci-error.log" 2>NUL || echo (no error log)
-          type "%PM2_HOME%\logs\demo-ci-out.log"  2>NUL || echo (no out log)
 
       - name: Health check
         run: |
           set OK=1
-          for /L %%i in (1,1,20) do (
-            echo [%%i/20] GET /hello
-            curl -s http://localhost:3000/hello >NUL && set OK=0 && goto H1
+          for /L %%i in (1,1,30) do (
+            echo [%%i/30] GET /hello
+            curl -sSf http://localhost:3000/hello >NUL && set OK=0 && goto :HELLO_OK
             timeout /t 2 /nobreak >NUL
           )
-          :H1
+          :HELLO_OK
           if %OK% NEQ 0 exit /b 1
 
           set OK=1
-          for /L %%i in (1,1,20) do (
-            echo [%%i/20] GET /bye
-            curl -s http://localhost:3000/bye >NUL && set OK=0 && goto H2
+          for /L %%i in (1,1,30) do (
+            echo [%%i/30] GET /bye
+            curl -sSf http://localhost:3000/bye >NUL && set OK=0 && goto :BYE_OK
             timeout /t 2 /nobreak >NUL
           )
-          :H2
+          :BYE_OK
           if %OK% NEQ 0 exit /b 1
 
-      - name: PM2 debug (on fail)
+      - name: Debug (only if failed)
         if: failure()
         run: |
+          echo ===== PM2 LIST =====
           npx --yes pm2 list
+          echo ===== PM2 DESCRIBE =====
           npx --yes pm2 describe demo-ci || echo (no describe)
-          dir "%PM2_HOME%\logs"
-          type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
-          type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
+          echo ===== LOG FILES =====
+          if exist "%PM2_HOME%\logs" dir /B "%PM2_HOME%\logs"
+          echo ===== ERROR LOG =====
+          if exist "%PM2_HOME%\logs\demo-ci-error.log" type "%PM2_HOME%\logs\demo-ci-error.log"
+          echo ===== OUT LOG =====
+          if exist "%PM2_HOME%\logs\demo-ci-out.log"  type "%PM2_HOME%\logs\demo-ci-out.log"
+          echo ===== NETSTAT :3000 =====
+          netstat -ano | findstr ":3000" || echo (nothing on :3000)
+          echo ===== NODE TASKS =====
+          tasklist | findstr /I "node" || echo (no node processes)
