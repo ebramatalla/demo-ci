@@ -12,7 +12,6 @@ defaults:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-    # ثبّت بيئة PM2 لكل خطوات الجوب (ينهي مشكلة /etc/.pm2)
     env:
       PM2_HOME: C:\pm2\dev
       HOME: C:\pm2\dev
@@ -29,37 +28,30 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Prepare PM2 directory
-        run: |
-          if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          echo CWD=%CD%  &&  dir
+      - name: Prepare PM2 dir
+        run: if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
 
       - name: Install deps
         run: npm ci --omit=dev
 
-      - name: PM2 clean start (index.js)
+      - name: PM2 clean start
         run: |
+          cd /d "%GITHUB_WORKSPACE%"
           echo CWD=%CD%
-          echo PM2_HOME=%PM2_HOME%
           npx --yes pm2 -v
-          rem ابدأ من الصفر
           npx --yes pm2 kill || ver >NUL
           npx --yes pm2 delete demo-ci || ver >NUL
-          rem شغّل وابني لوجات واضحة داخل PM2_HOME
           npx --yes pm2 start "%CD%\index.js" --name demo-ci --time ^
             -o "%PM2_HOME%\logs\demo-ci-out.log" ^
             -e "%PM2_HOME%\logs\demo-ci-error.log" ^
             --merge-logs --update-env
-          rem تحقق فوري
-          npx --yes pm2 ping
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci
           npx --yes pm2 save
-          echo ----- last logs -----
           type "%PM2_HOME%\logs\demo-ci-error.log" 2>NUL || echo (no error log)
           type "%PM2_HOME%\logs\demo-ci-out.log"  2>NUL || echo (no out log)
 
-      - name: Health check (CMD)
+      - name: Health check
         run: |
           set OK=1
           for /L %%i in (1,1,20) do (
@@ -84,9 +76,6 @@ jobs:
         run: |
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci || echo (no describe)
-          echo ===== logs dir =====
           dir "%PM2_HOME%\logs"
-          echo ===== error log =====
           type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
-          echo ===== out log =====
           type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
