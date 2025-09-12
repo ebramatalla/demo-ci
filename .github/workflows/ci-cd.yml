@@ -2,8 +2,8 @@ name: CI/CD
 
 on:
   push:
-    branches: ["main"]          # أي push على main = CI + Deploy Dev
-    tags: ["v*"]                # أي tag يبدأ بـ v = Deploy Prod
+    branches: ["main"] # أي push على main = CI + Deploy Dev
+    tags: ["v*"] # أي tag يبدأ بـ v = Deploy Prod
   workflow_dispatch: {}
 
 jobs:
@@ -40,10 +40,10 @@ jobs:
         run: |
           set PM2_HOME=%GITHUB_WORKSPACE%\.pm2
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          npx --yes pm2 --version
-          npx --yes pm2 delete demo-ci || ver >NUL
-          npx --yes pm2 start ecosystem.config.js --env development
-          npx --yes pm2 save
+          pm2 --version
+          pm2 delete all
+          pm2 start ecosystem.config.js --env development
+          pm2 save
 
       - name: Health check (dev)
         run: |
