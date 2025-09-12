@@ -41,8 +41,8 @@ jobs:
           set PM2_HOME=%GITHUB_WORKSPACE%\.pm2
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
           npx --yes pm2 --version
-          npx --yes pm2 kill || ver >NUL
-          npx --yes pm2 startOrReload ecosystem.config.js --env development
+          npx --yes pm2 delete demo-ci || ver >NUL
+          npx --yes pm2 start ecosystem.config.js --env development
           npx --yes pm2 save
 
       - name: Health check (dev)
