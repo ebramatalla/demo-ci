@@ -1,5 +1,25 @@
-# ... نفس البداية زي ما هي
+name: CI/CD
 
+on:
+  push:
+    branches: ["main"]          # أي push على main = CI + Deploy Dev
+    tags: ["v*"]                # أي tag يبدأ بـ v = Deploy Prod
+  workflow_dispatch: {}
+
+jobs:
+  # --- CI على سحابة GitHub ---
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm test
+
+  # --- Deploy Dev على جهاز PC ---
   deploy_dev:
     needs: test
     if: github.ref == 'refs/heads/main'
@@ -21,7 +41,6 @@
           set PM2_HOME=%GITHUB_WORKSPACE%\.pm2
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
           npx --yes pm2 --version
-          rem (اختياري) اقفل أي دايمون قديم لو موجود
           npx --yes pm2 kill || ver >NUL
           npx --yes pm2 startOrReload ecosystem.config.js --env development
           npx --yes pm2 save
@@ -30,6 +49,7 @@
         run: |
           curl -sSf http://localhost:3000/hello >NUL
 
+  # --- Deploy Prod على جهاز Lab (Tag فقط) ---
   deploy_prod:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
