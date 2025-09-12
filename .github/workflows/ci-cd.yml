@@ -35,3 +35,4 @@ jobs:
           pm2 delete demo-ci
           pm2 ls
           ls -la
+          echo CWD=%CD%
