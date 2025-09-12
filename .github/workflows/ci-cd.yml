@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: ["main"] # أي push على main = CI + Deploy Dev
-    tags: ["v*"] # أي tag يبدأ بـ v = Deploy Prod
-  workflow_dispatch: {} # تشغيل يدوي لو حبيت
+    branches: ["main"]          # أي push على main = CI + Deploy Dev
+    tags: ["v*"]                # أي tag يبدأ بـ v = Deploy Prod
+  workflow_dispatch: {}
 
 jobs:
   # --- CI على سحابة GitHub ---
@@ -20,22 +20,24 @@ jobs:
       - run: npm test
 
   # --- Deploy Dev على جهاز PC ---
-    deploy_dev:
+  deploy_dev:
     needs: test
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, pc, dev]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
+        with:
+          node-version: "20"
+          cache: "npm"
       - run: npm ci --omit=dev
 
       - name: PM2 deploy (dev)
         shell: cmd
         run: |
-          npx pm2 --version
-          npx pm2 startOrReload ecosystem.config.js --env development
-          npx pm2 save
+          npx --yes pm2 --version
+          npx --yes pm2 startOrReload ecosystem.config.js --env development
+          npx --yes pm2 save
 
       - name: Health check (dev)
         shell: powershell
@@ -43,25 +45,27 @@ jobs:
           $r = Invoke-WebRequest http://localhost:3000/hello -UseBasicParsing
           if ($r.StatusCode -ne 200) { throw "Health check failed" }
 
-
   # --- Deploy Prod على جهاز Lab (Tag فقط) ---
-   deploy_prod:
+  deploy_prod:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, lab, prod]
-    environment: { name: production }
+    environment:
+      name: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
+        with:
+          node-version: "20"
+          cache: "npm"
       - run: npm ci --omit=dev
 
       - name: PM2 deploy (prod)
         shell: cmd
         run: |
-          npx pm2 --version
-          npx pm2 startOrReload ecosystem.config.js --env production
-          npx pm2 save
+          npx --yes pm2 --version
+          npx --yes pm2 startOrReload ecosystem.config.js --env production
+          npx --yes pm2 save
 
       - name: Health check (prod)
         shell: powershell
