@@ -30,7 +30,6 @@ jobs:
         run: |
           echo "Starting PM2 with ecosystem.config.js..."
           echo "Current directory: %CD%"
-          pm2 delete demo-ci
           pm2 ls
           ls -la
           echo CWD=%CD%
