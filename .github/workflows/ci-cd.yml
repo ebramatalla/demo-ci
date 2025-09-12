@@ -9,7 +9,7 @@ on:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-    defaults: { run: { shell: cmd } }
+    defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
