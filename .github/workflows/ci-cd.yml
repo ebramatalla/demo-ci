@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI/CD (dev only, no PM2)
 
 on:
   push:
@@ -10,13 +10,9 @@ defaults:
     shell: cmd
 
 jobs:
-  deploy_dev:
+  dev_quick_run:
     runs-on: [self-hosted, pc, dev]
-    env:
-      PM2_HOME: C:\pm2\dev
-      HOME: C:\pm2\dev
-      PM2_RPC_PORT: \\.\pipe\pm2-${{ github.run_id }}-rpc
-      PM2_PUB_PORT: \\.\pipe\pm2-${{ github.run_id }}-pub
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,31 +26,33 @@ jobs:
       - name: Install deps (prod only)
         run: npm ci --omit=dev
 
-      - name: Ensure PM2 dir
-        run: if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-
-      - name: Start / Restart with PM2
+      - name: Start app (node index.js, background)
         run: |
           cd /d "%GITHUB_WORKSPACE%"
           echo CWD=%CD%
-          npx --yes pm2 -v
-          npx --yes pm2 startOrReload ecosystem.config.js --env development
-          npx --yes pm2 save
-          npx --yes pm2 list
-          npx --yes pm2 describe demo-ci || ver >NUL
+          rem شغّل Node في الخلفية وسجّل الـ PID + اللوجز
+          powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "$env:PORT=3000; " ^
+            "$p = Start-Process node 'index.js' -PassThru -RedirectStandardOutput 'out.log' -RedirectStandardError 'err.log' -WorkingDirectory $env:GITHUB_WORKSPACE; " ^
+            "$p.Id | Out-File 'server.pid' -Encoding ascii; " ^
+            "Write-Host ('Started PID: ' + $p.Id)"
 
       - name: Health check
         run: |
-          echo Checking endpoints with PowerShell...
-          powershell -NoProfile -Command ^
+          powershell -NoProfile -ExecutionPolicy Bypass -Command ^
             "$urls=@('http://localhost:3000/hello','http://localhost:3000/bye');" ^
-            "foreach($u in $urls){$ok=$false;1..20|%%{try{Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 $u|Out-Null;$ok=$true;break}catch{Start-Sleep -s 2}};if(-not $ok){throw \"Health check failed: $u\"}}"
+            "foreach($u in $urls){" ^
+            "  $ok=$false; foreach($i in 1..20){try{Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 $u|Out-Null; $ok=$true; break} catch{Start-Sleep -s 2}}" ^
+            "  if(-not $ok){ throw \"Health check failed: $u\" }" ^
+            "}"
 
-      - name: PM2 debug (on failure)
-        if: failure()
+      - name: Stop app & show logs
+        if: always()
         run: |
-          npx --yes pm2 list
-          npx --yes pm2 describe demo-ci || ver >NUL
-          if exist "%PM2_HOME%\logs" dir "%PM2_HOME%\logs"
-          if exist "%PM2_HOME%\logs\demo-ci-error.log" type "%PM2_HOME%\logs\demo-ci-error.log"
-          if exist "%PM2_HOME%\logs\demo-ci-out.log"  type "%PM2_HOME%\logs\demo-ci-out.log"
+          cd /d "%GITHUB_WORKSPACE%"
+          powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "if (Test-Path 'server.pid'){ $pid=[int](Get-Content 'server.pid'); Write-Host ('Stopping PID: ' + $pid); try{ Stop-Process -Id $pid -Force } catch{}; Start-Sleep -s 1 }"
+          echo ===== err.log =====
+          type err.log 2>NUL || echo (no err.log)
+          echo ===== out.log =====
+          type out.log 2>NUL || echo (no out.log)
