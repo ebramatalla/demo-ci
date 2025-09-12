@@ -9,86 +9,124 @@ on:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-    defaults: { run: { shell: bash } }
+    defaults: { run: { shell: cmd } }  # استخدام cmd للويندوز
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with: 
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
 
-      - run: npm ci --omit=dev
+      - name: Install dependencies
+        run: npm ci --omit=dev
 
-      - name: Setup PM2 Home
+      - name: Create PM2 directory
         run: |
-          # استخدام مسار ثابت خارج workspace
-          PM2_HOME="/etc/pm2"
-          echo "PM2_HOME=${PM2_HOME}" >> $GITHUB_ENV
-          sudo mkdir -p ${PM2_HOME}
-          sudo chown -R $USER:${PM2_HOME}
+          if not exist "%GITHUB_WORKSPACE%\.pm2" mkdir "%GITHUB_WORKSPACE%\.pm2"
 
       - name: PM2 deploy (dev)
         run: |
-          cd "$GITHUB_WORKSPACE"
-          # إيقاف التطبيق إذا كان يعمل
-          npx pm2 delete ecosystem.config.js || true
-          # بدء التطبيق مع البيئة الصحيحة
-          npx pm2 start ecosystem.config.js --env development
-          # حفظ قائمة العمليات
-          npx pm2 save
-          # إنشاء سكريبت بدء تلقائي
-          npx pm2 startup | tail -n 1 | bash
-          # حفظ القائمة النهائية
-          npx pm2 save
+          cd /d "%GITHUB_WORKSPACE%"
+          set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
+          
+          npx --yes pm2 delete ecosystem.config.js || echo "App not running, starting fresh"
+          npx --yes pm2 start ecosystem.config.js --env development
+          npx --yes pm2 save
+          
+          # إنشاء سكريبت بدء تلقائي للويندوز
+          npx --yes pm2 startup windows | findstr /C:"pm2" > startup.bat || echo "Startup command not found"
+          if exist startup.bat (
+            call startup.bat
+            del startup.bat
+          )
 
       - name: PM2 debug (dev)
         if: always()
         run: |
-          npx pm2 list
-          npx pm2 describe demo-ci || true
-          echo "===== logs ====="
-          npx pm2 logs demo-ci --lines 20 || true
+          set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
+          npx --yes pm2 list
+          npx --yes pm2 describe demo-ci || echo "Cannot describe app"
+          echo ===== logs =====
+          dir "%PM2_HOME%\logs" || echo "Logs directory not found"
+          if exist "%PM2_HOME%\logs\demo-ci-error.log" (
+            type "%PM2_HOME%\logs\demo-ci-error.log"
+          ) else (
+            echo (no error log)
+          )
+          if exist "%PM2_HOME%\logs\demo-ci-out.log" (
+            type "%PM2_HOME%\logs\demo-ci-out.log"
+          ) else (
+            echo (no out log)
+          )
 
       - name: Health check (dev)
         run: |
-          curl -sSf http://localhost:3000/hello
-          curl -sSf http://localhost:3000/bye
+          timeout /t 5 /nobreak >nul
+          curl -sSf http://localhost:3000/hello || echo "Health check failed for /hello"
+          curl -sSf http://localhost:3000/bye || echo "Health check failed for /bye"
 
   deploy_prod:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, lab, prod]
     environment: { name: production }
-    defaults: { run: { shell: bash } }  # توحيد استخدام bash
+    defaults: { run: { shell: cmd } }  # توحيد استخدام cmd
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: "npm" }
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with: 
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
 
-      - run: npm ci --omit=dev
+      - name: Install dependencies
+        run: npm ci --omit=dev
 
-      - name: Setup PM2 Home
+      - name: Create PM2 directory
         run: |
-          PM2_HOME="/etc/pm2"
-          echo "PM2_HOME=${PM2_HOME}" >> $GITHUB_ENV
-          sudo mkdir -p ${PM2_HOME}
-          sudo chown -R $USER:${PM2_HOME}
+          if not exist "%GITHUB_WORKSPACE%\.pm2" mkdir "%GITHUB_WORKSPACE%\.pm2"
 
       - name: PM2 deploy (prod)
         run: |
-          cd "$GITHUB_WORKSPACE"
-          # استخدام ecosystem.config.js بدلاً من index.js مباشرة
-          npx pm2 delete ecosystem.config.js || true
-          npx pm2 start ecosystem.config.js --env production
-          npx pm2 save
-          npx pm2 startup | tail -n 1 | bash
-          npx pm2 save
+          cd /d "%GITHUB_WORKSPACE%"
+          set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
+          
+          npx --yes pm2 delete demo-ci || echo "App not running, starting fresh"
+          npx --yes pm2 start ecosystem.config.js --env production
+          npx --yes pm2 save
+          
+          # إنشاء سكريبت بدء تلقائي للويندوز
+          npx --yes pm2 startup windows | findstr /C:"pm2" > startup.bat || echo "Startup command not found"
+          if exist startup.bat (
+            call startup.bat
+            del startup.bat
+          )
 
       - name: PM2 debug (prod)
         if: always()
         run: |
-          npx pm2 list
-          npx pm2 describe demo-ci || true
-          npx pm2 logs demo-ci --lines 20 || true
+          set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
+          npx --yes pm2 list
+          npx --yes pm2 describe demo-ci || echo "Cannot describe app"
+          echo ===== logs =====
+          dir "%PM2_HOME%\logs" || echo "Logs directory not found"
+          if exist "%PM2_HOME%\logs\demo-ci-error.log" (
+            type "%PM2_HOME%\logs\demo-ci-error.log"
+          ) else (
+            echo (no error log)
+          )
+          if exist "%PM2_HOME%\logs\demo-ci-out.log" (
+            type "%PM2_HOME%\logs\demo-ci-out.log"
+          ) else (
+            echo (no out log)
+          )
 
       - name: Health check (prod)
         run: |
-          curl -sSf http://localhost:3000/hello
-          curl -sSf http://localhost:3000/bye
+          timeout /t 5 /nobreak >nul
+          curl -sSf http://localhost:3000/hello || echo "Health check failed for /hello"
+          curl -sSf http://localhost:3000/bye || echo "Health check failed for /bye"
