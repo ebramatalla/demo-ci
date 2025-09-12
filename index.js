@@ -6,9 +6,9 @@ app.get('/bye', (req, res) => res.send('bye bye'));
 
 const port = process.env.PORT || 3000;
 
+// شغّل السيرفر فقط لما الملف يتنفذ مباشرة (مش من Jest)
 if (require.main === module) {
   app.listen(port, () => console.log(`Server on :${port}`));
 }
 
-const server = app.listen(port, () => console.log(`Server on :${port}`));
-module.exports = { app, server };
+module.exports = app; // للتست
