@@ -1,10 +1,10 @@
 const request = require('supertest');
-const app = require('../index');
+const { app, server } = require('../index');
 
-describe('API smoke', () => {
-  it('GET /hello', async () => {
-    const res = await request(app).get('/hello');
-    expect(res.status).toBe(200);
-    expect(res.text.toLowerCase()).toContain('hello world');
-  });
+afterAll(() => server.close());
+
+it('GET /hello', async () => {
+  const r = await request(app).get('/hello');
+  expect(r.status).toBe(200);
+  expect(r.text.toLowerCase()).toContain('hello world');
 });

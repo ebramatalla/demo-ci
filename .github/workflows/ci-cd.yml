@@ -2,43 +2,59 @@ name: CI/CD
 
 on:
   push:
-    branches: [ "main" ]      # أي push على main = CI + Deploy Dev
-    tags:     [ "v*" ]        # أي tag يبدأ بـ v = Deploy Prod
-  workflow_dispatch: {}        # تشغيل يدوي لو حبيت
+    branches: ["main"] # أي push على main = CI + Deploy Dev
+    tags: ["v*"] # أي tag يبدأ بـ v = Deploy Prod
+  workflow_dispatch: {} # تشغيل يدوي لو حبيت
 
 jobs:
+  # --- CI على سحابة GitHub ---
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci
       - run: npm test
 
+  # --- Deploy Dev على جهاز PC ---
   deploy_dev:
     needs: test
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, pc, dev]   # لازم Labels دي تبقى على Runner بتاع الـ PC
+    runs-on: [self-hosted, pc, dev] # لازم Labels دي تبقى على Runner بتاع الـ PC
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
+
+      # تأمين إتاحة pm2 في بيئة الخدمة (Windows)
+      - name: Ensure PM2 on Windows
+        shell: powershell
+        run: |
+          npm i -g pm2
+          $npmRoot = (npm root -g)
+          $npmBin  = $npmRoot -replace '\\node_modules$',''
+          echo $npmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          pm2 -v
+
       - run: npm ci --omit=dev
+
       - name: PM2 deploy (dev)
         run: |
           pm2 startOrReload ecosystem.config.js --env development
           pm2 save
+
       - name: Health check (dev)
         shell: powershell
         run: |
           $r = Invoke-WebRequest http://localhost:3000/hello -UseBasicParsing
           if ($r.StatusCode -ne 200) { throw "Health check failed" }
 
+  # --- Deploy Prod على جهاز Lab (Tag فقط) ---
   deploy_prod:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
@@ -49,13 +65,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
+
+      # تأمين إتاحة pm2 في بيئة الخدمة (Windows)
+      - name: Ensure PM2 on Windows
+        shell: powershell
+        run: |
+          npm i -g pm2
+          $npmRoot = (npm root -g)
+          $npmBin  = $npmRoot -replace '\\node_modules$',''
+          echo $npmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          pm2 -v
+
       - run: npm ci --omit=dev
+
       - name: PM2 deploy (prod)
         run: |
           pm2 startOrReload ecosystem.config.js --env production
           pm2 save
+
       - name: Health check (prod)
         shell: powershell
         run: |
