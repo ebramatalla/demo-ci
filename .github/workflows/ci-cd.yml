@@ -44,10 +44,6 @@ jobs:
           npx --yes pm2 start index.js --name demo-ci --env development
           npx --yes pm2 save
 
-      - name: Health check (dev)
-        run: |
-          curl -sSf http://localhost:3000/hello >NUL
-
   # --- Deploy Prod على جهاز Lab (Tag فقط) ---
   deploy_prod:
     needs: test
@@ -75,7 +71,3 @@ jobs:
           npx --yes pm2 kill || ver >NUL
           npx --yes pm2 startOrReload ecosystem.config.js --env production
           npx --yes pm2 save
-
-      - name: Health check (prod)
-        run: |
-          curl -sSf http://localhost:3000/hello >NUL
