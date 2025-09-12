@@ -6,5 +6,8 @@ app.get('/bye', (req, res) => res.send('bye bye'));
 
 const port = process.env.PORT || 3000;
 
-app.listen(port, () => console.log(`Server on :${port}`));
+if (require.main === module) {
+  app.listen(port, () => console.log(`Server on :${port}`));
+}
 
+module.exports = app;   // متصدّرش server، بس app
