@@ -9,25 +9,24 @@ on:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-    defaults:
-      run:
-        shell: cmd
+    defaults: { run: { shell: cmd } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
+        with: { node-version: "20", cache: "npm" }
 
       - run: npm ci --omit=dev
 
       - name: PM2 deploy (dev)
         run: |
+          rem استخدم فولدر محلي لـ PM2
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          npx --yes pm2 --version
-          rem حاول ريستارت.. ولو مش موجود ابدأه
-          npx --yes pm2 restart demo-ci || npx --yes pm2 start index.js --name demo-ci
+          rem تأكد إننا جوه الريبو
+          cd /d "%GITHUB_WORKSPACE%"
+          rem ابدأ من الصفر دايمًا (لو مش موجود مش مشكلة)
+          npx --yes pm2 delete demo-ci || ver >NUL
+          npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci
           npx --yes pm2 save
 
       - name: PM2 debug (dev)
@@ -36,9 +35,10 @@ jobs:
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci
+          echo ===== logs =====
           dir "%PM2_HOME%\logs"
           type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
-          type "%PM2_HOME%\logs\demo-ci-out.log" 2> NUL || echo (no out log)
+          type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
 
       - name: Health check (dev)
         run: |
@@ -48,17 +48,12 @@ jobs:
   deploy_prod:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, lab, prod]
-    environment:
-      name: production
-    defaults:
-      run:
-        shell: cmd
+    environment: { name: production }
+    defaults: { run: { shell: cmd } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
+        with: { node-version: "20", cache: "npm" }
 
       - run: npm ci --omit=dev
 
@@ -66,8 +61,9 @@ jobs:
         run: |
           set "PM2_HOME=%GITHUB_WORKSPACE%\.pm2"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          npx --yes pm2 --version
-          npx --yes pm2 restart demo-ci || npx --yes pm2 start index.js --name demo-ci
+          cd /d "%GITHUB_WORKSPACE%"
+          npx --yes pm2 delete demo-ci || ver >NUL
+          npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci
           npx --yes pm2 save
 
       - name: PM2 debug (prod)
@@ -78,7 +74,7 @@ jobs:
           npx --yes pm2 describe demo-ci
           dir "%PM2_HOME%\logs"
           type "%PM2_HOME%\logs\demo-ci-error.log" 2> NUL || echo (no error log)
-          type "%PM2_HOME%\logs\demo-ci-out.log" 2> NUL || echo (no out log)
+          type "%PM2_HOME%\logs\demo-ci-out.log"  2> NUL || echo (no out log)
 
       - name: Health check (prod)
         run: |
