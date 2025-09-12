@@ -42,12 +42,14 @@ jobs:
           call node -e "require('express'); console.log('express OK')"
           call node -e "require('fs').accessSync('./index.js'); console.log('index file OK')"
           npx --yes pm2 -v
-          npx --yes pm2 delete demo-ci || ver >NUL
-          npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci --time
+          npx --yes pm2 delete demo-ci 2>NUL || echo "No existing process to delete"
+          npx --yes pm2 start ecosystem.config.js
           npx --yes pm2 save
           rem شوف اللي شغّال فورًا بنفس الـ env
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci
+          rem انتظر قليلاً للتطبيق يبدأ
+          timeout /t 3 /nobreak >NUL
 
       - name: Health check (dev)
         shell: powershell
@@ -103,11 +105,13 @@ jobs:
       - name: PM2 start/restart (prod)
         run: |
           cd /d "%GITHUB_WORKSPACE%"
-          npx --yes pm2 delete demo-ci || ver >NUL
-          npx --yes pm2 start "%GITHUB_WORKSPACE%\index.js" --name demo-ci --time
+          npx --yes pm2 delete demo-ci 2>NUL || echo "No existing process to delete"
+          npx --yes pm2 start ecosystem.config.js
           npx --yes pm2 save
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci
+          rem انتظر قليلاً للتطبيق يبدأ
+          timeout /t 3 /nobreak >NUL
 
       - name: Health check (prod)
         shell: powershell
