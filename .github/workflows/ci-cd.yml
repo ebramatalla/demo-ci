@@ -2,10 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: ["main"] # أي push على main هيعمل Deploy على dev
-  workflow_dispatch: {} # تشغيل يدوي
+    branches: ["main"]
+  workflow_dispatch: {}
 
-# شغّل كل الأوامر بــ CMD (ونتجنب PowerShell علشان execution policy)
 defaults:
   run:
     shell: cmd
@@ -13,67 +12,37 @@ defaults:
 jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
-
-    # بيئة PM2 والـ pipes الفريدة علشان نتفادى EPERM على named pipes
     env:
-      PM2_HOME: 'C:\Users\Ebram\.pm2' # لو فيها صلاحيات، استخدم بدلها C:\pm2\dev
-      HOME: 'C:\Users\Ebram'
-      HOMEDRIVE: "C:"
-      HOMEPATH: '\Users\Ebram'
-      PM2_RPC_PORT: '\\.\pipe\pm2-${{ github.run_id }}-rpc'
-      PM2_PUB_PORT: '\\.\pipe\pm2-${{ github.run_id }}-pub'
-
+      PM2_HOME: C:\Users\Ebram\.pm2 # نفس بيت PM2 بتاع المستخدم
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm ci --omit=dev
 
-      - name: Prepare PM2 directory
-        run: |
-          if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
-          if not exist "%PM2_HOME%\logs" mkdir "%PM2_HOME%\logs"
-
-      - name: Start/Restart app with PM2
+      - name: Start / Restart with PM2
         run: |
           cd /d "%GITHUB_WORKSPACE%"
-          echo CWD=%CD%
-          node -v
-          echo Using PM2_HOME=%PM2_HOME%
-          npx --yes pm2 -v
-
-          rem حاول امسح أي نسخة قديمة بنفس الاسم (لو مش موجودة مش مشكلة)
-          npx --yes pm2 delete demo-ci 2>NUL || echo No existing demo-ci
-
-          rem شغل index.js باسم demo-ci وسجّل اللوجز في PM2_HOME\logs
+          if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
+          npx --yes pm2 kill || ver >NUL
+          npx --yes pm2 delete demo-ci || ver >NUL
           npx --yes pm2 start "%CD%\index.js" --name demo-ci --time ^
             -o "%PM2_HOME%\logs\demo-ci-out.log" ^
-            -e "%PM2_HOME%\logs\demo-ci-error.log" ^
-            --merge-logs --update-env
-
-          rem احفظ قائمة العمليات
+            -e "%PM2_HOME%\logs\demo-ci-error.log"
           npx --yes pm2 save
-
-          rem اعرض الحالة سريعًا
           npx --yes pm2 list
           npx --yes pm2 describe demo-ci
-
-          rem اطبع آخر اللوجز لو موجودة
-          type "%PM2_HOME%\logs\demo-ci-error.log" 2>NUL || echo (no error log)
-          type "%PM2_HOME%\logs\demo-ci-out.log"  2>NUL || echo (no out log)
 
       - name: Health check
         run: |
           set OK=1
-          echo Checking /hello ...
           for /L %%i in (1,1,20) do (
+            echo [%%i/20] GET /hello
             curl -s http://localhost:3000/hello >NUL && set OK=0 && goto H1
             timeout /t 2 /nobreak >NUL
           )
@@ -81,10 +50,22 @@ jobs:
           if %OK% NEQ 0 exit /b 1
 
           set OK=1
-          echo Checking /bye ...
           for /L %%i in (1,1,20) do (
+            echo [%%i/20] GET /bye
             curl -s http://localhost:3000/bye >NUL && set OK=0 && goto H2
             timeout /t 2 /nobreak >NUL
           )
           :H2
           if %OK% NEQ 0 exit /b 1
+
+      - name: PM2 logs on failure
+        if: failure()
+        run: |
+          echo ===== PM2 LIST =====
+          npx --yes pm2 list
+          echo ===== DESCRIBE =====
+          npx --yes pm2 describe demo-ci || echo (no describe)
+          echo ===== ERROR LOG =====
+          type "%PM2_HOME%\logs\demo-ci-error.log" 2>NUL || echo (no error log)
+          echo ===== OUT LOG =====
+          type "%PM2_HOME%\logs\demo-ci-out.log"  2>NUL || echo (no out log)
