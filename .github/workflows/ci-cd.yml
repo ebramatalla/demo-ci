@@ -13,7 +13,8 @@ jobs:
   deploy_dev:
     runs-on: [self-hosted, pc, dev]
     env:
-      PM2_HOME: C:\Users\Ebram\.pm2 # نفس بيت PM2 بتاع المستخدم
+      PM2_HOME: C:\Users\Ebram\.pm2   # بيت PM2 بتاع يوزرك
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,18 +26,13 @@ jobs:
       - name: Install deps
         run: npm ci --omit=dev
 
-      - name: Who am I?
-        shell: cmd
-        run: whoami
-
       - name: Start / Restart with PM2
         run: |
           cd /d "%GITHUB_WORKSPACE%"
           if not exist "%PM2_HOME%" mkdir "%PM2_HOME%"
           npx --yes pm2 kill || ver >NUL
           npx --yes pm2 delete demo-ci || ver >NUL
-          echo "Starting with PM2"
-          npx --yes pm2 start ecosystem.config.js --name demo-ci --time ^
+          npx --yes pm2 start index.js --name demo-ci --time ^
             -o "%PM2_HOME%\logs\demo-ci-out.log" ^
             -e "%PM2_HOME%\logs\demo-ci-error.log"
           npx --yes pm2 save
@@ -45,23 +41,22 @@ jobs:
 
       - name: Health check
         run: |
-          set OK=1
+          rem /hello
           for /L %%i in (1,1,20) do (
             echo [%%i/20] GET /hello
-            curl -s http://localhost:3000/hello >NUL && set OK=0 && goto H1
+            curl -s http://localhost:3000/hello >NUL && goto H1
             timeout /t 2 /nobreak >NUL
           )
+          exit /b 1
           :H1
-          if %OK% NEQ 0 exit /b 1
-
-          set OK=1
+          rem /bye
           for /L %%i in (1,1,20) do (
             echo [%%i/20] GET /bye
-            curl -s http://localhost:3000/bye >NUL && set OK=0 && goto H2
+            curl -s http://localhost:3000/bye >NUL && goto H2
             timeout /t 2 /nobreak >NUL
           )
+          exit /b 1
           :H2
-          if %OK% NEQ 0 exit /b 1
 
       - name: PM2 logs on failure
         if: failure()
